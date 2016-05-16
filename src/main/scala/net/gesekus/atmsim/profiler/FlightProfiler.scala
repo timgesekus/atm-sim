@@ -1,66 +1,46 @@
 package net.gesekus.atmsim.profiler
 
-import akka.actor.Actor
-import net.gesekus.atmsim.model.Degree
-import net.gesekus.atmsim.model.AircraftId
-import net.gesekus.atmsim.model.Aircraft
-import net.gesekus.atmsim.model.Position3D
-import net.gesekus.atmsim.model.SimTime
+import net.gesekus.atmsim.model.aircraft.Aircraft
+import net.gesekus.atmsim.model.aircraft.AircraftType
 import net.gesekus.atmsim.model.MeterPerSecond
-import net.gesekus.atmsim.model.SimTime
-import java.time.LocalDateTime
-import java.time.Period
-import java.time.Duration
-import akka.actor.Props
+import net.gesekus.atmsim.model.DegreePerSecond
+import net.gesekus.atmsim.model.Degree
 
-sealed trait AircraftCommand
-case class ChangeHeading(heading: Degree) extends AircraftCommand
-case class ChangePosition(position: Position3D) extends AircraftCommand
-case class ChangeGroundSpeed(groundSpeed: MeterPerSecond) extends AircraftCommand
-case class AdvanceToSimTime(simTime: LocalDateTime) extends AircraftCommand
-
-sealed trait AircraftEvent
-case class HeadingChanged(heading: Degree) extends AircraftEvent
-case class PositionChanged(poistion: Position3D) extends AircraftEvent
-case class GroundSpeedChanged(groundSpeed: MeterPerSecond) extends AircraftEvent
-case class SimTimeAdvanced(simTime: LocalDateTime) extends AircraftEvent
-
-object AircraftProfiler {
-  
-  def props(id: AircraftId, simTime : LocalDateTime) : Props = Props (new AircraftProfiler(id,simTime))
+class FlightProfiler {
 }
-
-class AircraftProfiler(id: AircraftId, simTime : LocalDateTime) extends Actor {
-  
-  var currentSimTime = simTime
-  var aircraft = Aircraft(id = id, heading = Degree(0), position = Position3D(0, 0, 0), groundSpeed = MeterPerSecond(0))
-  def receive = {
-    case ChangeHeading(heading) => updateState(HeadingChanged(heading))
-    case ChangePosition(newPostion) => updateState(PositionChanged(newPostion))
-    case ChangeGroundSpeed(newGroundSpeed) => updateState(GroundSpeedChanged(newGroundSpeed))
-    case AdvanceToSimTime(simTime) => advanceToSimTime(simTime)
-  }
-
-  def updateState(event: AircraftEvent) {
-    event match {
-      case HeadingChanged(newHeading) => aircraft = aircraft.copy(heading = newHeading)
-      case PositionChanged(newPosition) => aircraft = aircraft.copy(position = newPosition)
-      case GroundSpeedChanged(newGroundSpeed) => aircraft = aircraft.copy(groundSpeed = newGroundSpeed)
-      case SimTimeAdvanced(newSimTime) => currentSimTime = newSimTime
+object FlightProfiler {
+  def simulate(aircraft: Aircraft, aircraftModel: AircraftType, time: Int): Aircraft = {
+    def calcNewRoc: MeterPerSecond = {
+      if (aircraft.position.x < aircraft.requestedAltitude) {
+        MeterPerSecond(aircraft.roc.mps - (aircraftModel.accelerationChangePerSecond * time))
+      } else {
+        aircraft.roc
+      }
     }
-    sender ! event
+
+    def calcNewRot: DegreePerSecond = {
+      if (aircraft.heading.angel < aircraft.requestedHeading.angel) {
+        DegreePerSecond(aircraft.rot.dps - (aircraftModel.rotChangePerSecond * time))
+      } else {
+        aircraft.rot
+      }
+    }
+
+    val newRoc = calcNewRoc
+    val newRot = calcNewRot
+    val newZ = aircraft.position.z + (newRoc.mps * time)
+    val newHeading = Degree(aircraft.heading.angel + (newRot.dps * time))
+    val xMul: Double = Math.sin(Math.toRadians(aircraft.heading.angel))
+    val yMul: Double = Math.cos(Math.toRadians(aircraft.heading.angel))
+
+    val newX = aircraft.position.x + xMul * toMiles(aircraft.ias.mps * time)
+    val newY = aircraft.position.y + yMul * toMiles(aircraft.ias.mps * time)
+    val newPosition = aircraft.position.copy(x = newX, y = newY)
+    aircraft.copy(position = newPosition, heading = newHeading, roc = newRoc, rot = newRot)
   }
 
-  def advanceToSimTime(newSimTime: LocalDateTime) {
-    val duration = Duration.between(currentSimTime, newSimTime);
-    val ds = duration.getSeconds;
-    val xMul : Double = Math.sin(aircraft.heading.angel)
-    val yMul : Double = Math.cos(aircraft.heading.angel)
-   
-    val newX = aircraft.position.x + xMul * aircraft.groundSpeed.mps * ds
-    val newY = aircraft.position.y + yMul * aircraft.groundSpeed.mps * ds
-    val newPosition = aircraft.position.copy( x = newX, y = newY)
-    updateState(PositionChanged(newPosition))
-    updateState(SimTimeAdvanced(newSimTime))
+  private def toMiles(meter: Double): Double = {
+    return meter * 0.000621371
   }
+
 }

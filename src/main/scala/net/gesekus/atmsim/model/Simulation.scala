@@ -5,6 +5,9 @@ import net.gesekus.atmsim.model.aircraft.Aircraft
 import net.gesekus.atmsim.model.aircraft.AircraftType
 
 case class AircraftTypeId(id: Int)
+case class AircraftId(id: Int)
+
+
 case class SimTime(simTime: LocalDateTime)
 
 case class Simulation(
